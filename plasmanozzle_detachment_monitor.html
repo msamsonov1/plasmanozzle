@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlasmaNozzle: Magnetic Nozzle Plasma Detachment Monitor</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        space: '#05070d',
+                        panel: '#090d16',
+                        panelBorder: '#1e293b',
+                        cyanGlow: '#06b6d4',
+                        violetGlow: '#8b5cf6',
+                        alertRose: '#ef4444',
+                        okEmerald: '#10b981',
+                        warnAmber: '#f59e0b'
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Courier New', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Bulletproof MathJax v3 Configuration -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        body {
+            background-color: #05070d;
+            color: #e2e8f0;
+            font-family: 'Inter', system-ui, sans-serif;
+            overflow-x: hidden;
+        }
+        .mono-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .formula-box {
+            background: rgba(3, 7, 18, 0.85);
+            border: 1px solid #1e293b;
+            padding: 0.85rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            color: #38bdf8;
+            font-size: 0.95rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+            box-shadow: inset 0 0 12px rgba(6, 182, 212, 0.05);
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #06b6d4;
+        }
+        /* Canvas glowing border */
+        .hud-border {
+            border: 1px solid #1e293b;
+            box-shadow: 0 0 25px rgba(6, 182, 212, 0.08);
+        }
+        .glow-text-cyan {
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+        }
+        .glow-text-rose {
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-space text-slate-200">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-gray-800 bg-[#070b14]/90 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-cyan-950/70 border border-cyan-500/30 text-cyan-400">
+                    <i data-lucide="zap" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold text-lg tracking-wider text-white">PlasmaNozzle<span class="text-cyan-400">OS</span></span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/80 mono-font">NASA SBIR T4.02</span>
+                    </div>
+                    <p class="text-xs text-slate-400">VASIMR & Helicon Magnetic Plume Detachment Telemetry</p>
+                </div>
+            </div>
+
+            <!-- Tab Navigation Buttons -->
+            <nav class="flex items-center space-x-1 sm:space-x-2">
+                <button id="tabBtnSim" onclick="switchTab('sim')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                    <i data-lucide="activity" class="w-4 h-4"></i>
+                    <span>Live Telemetry</span>
+                </button>
+                <button id="tabBtnPhysics" onclick="switchTab('physics')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 hover:bg-gray-800/60 border border-transparent">
+                    <i data-lucide="atom" class="w-4 h-4"></i>
+                    <span>Governing Physics</span>
+                </button>
+                <button id="tabBtnProposal" onclick="switchTab('proposal')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 hover:bg-gray-800/60 border border-transparent">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>NASA Proposal</span>
+                </button>
+                <button id="tabBtnARR" onclick="switchTab('arr')" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 hover:bg-gray-800/60 border border-transparent">
+                    <i data-lucide="dollar-sign" class="w-4 h-4"></i>
+                    <span>Commercialization</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: LIVE SIMULATION & HUD (#viewSim)    -->
+        <!-- ========================================== -->
+        <div id="viewSim" class="space-y-6">
+            <!-- Alert & Status Banner -->
+            <div id="statusBanner" class="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center space-x-3">
+                    <span id="statusIndicatorPulse" class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    <div>
+                        <div class="text-sm font-semibold text-emerald-300 flex items-center space-x-2">
+                            <span id="statusTitle">SUPER-ALFVÉNIC DETACHMENT CONFIRMED</span>
+                            <span class="text-xs bg-emerald-900/60 border border-emerald-700/60 px-2 py-0.2 rounded text-emerald-200 mono-font" id="stateCode">STATE: NOMINAL_DETACH</span>
+                        </div>
+                        <p class="text-xs text-slate-400" id="statusDesc">Electron inertial detachment active. Plume thrust vector efficiency: 94.2%. Reconnection margin: +41 dB.</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4 mono-font text-xs">
+                    <div class="text-right">
+                        <div class="text-slate-400">ALFVÉN MACH $M_A$</div>
+                        <div id="telemetryMa" class="text-cyan-400 font-bold text-sm">2.42</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-slate-400">NET THRUST ($F_z$)</div>
+                        <div id="telemetryThrust" class="text-white font-bold text-sm">3.85 N</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-slate-400">RECOMBINATION LOSS</div>
+                        <div id="telemetryLoss" class="text-emerald-400 font-bold text-sm">2.1%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Grid: Interactive 2D Magnetic Field & Particle Simulation Canvas -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 2D Canvas Panel (8 cols) -->
+                <div class="lg:col-span-8 bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-cyan-400"></i>
+                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">2D Magnetic Plume & Divergent Nozzle Vector Field</h2>
+                        </div>
+                        <div class="flex items-center space-x-3 text-xs mono-font">
+                            <span class="text-cyan-400 flex items-center space-x-1">
+                                <span class="w-2.5 h-0.5 bg-cyan-400 inline-block"></span>
+                                <span>$B$-Field Lines</span>
+                            </span>
+                            <span class="text-violet-400 flex items-center space-x-1">
+                                <span class="w-2 h-2 rounded-full bg-violet-400 inline-block"></span>
+                                <span>Plasma Ions ($Ar^+$)</span>
+                            </span>
+                            <span class="text-rose-400 flex items-center space-x-1">
+                                <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+                                <span>Trapped Curl</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Canvas -->
+                    <div class="relative w-full h-72 sm:h-80 md:h-96 rounded-xl overflow-hidden bg-[#03050a] border border-gray-900">
+                        <canvas id="plumeCanvas" class="w-full h-full block"></canvas>
+                        <!-- Annotation Overlay -->
+                        <div class="absolute bottom-2 left-3 text-[10px] mono-font text-slate-500 pointer-events-none flex space-x-4">
+                            <span>$z=0$ (Nozzle Throat)</span>
+                            <span>$z=z_{\text{detach}}$ (Critical Alfvèn Line)</span>
+                            <span>$z=50\,\text{cm}$ (Downstream Exhaust)</span>
+                        </div>
+                        <div id="detachmentAlertTag" class="hidden absolute top-3 right-3 bg-rose-950/90 border border-rose-500 text-rose-300 px-2.5 py-1 rounded text-xs mono-font flex items-center space-x-1.5 animate-pulse">
+                            <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-400"></i>
+                            <span>BACK-STREAMING DETECTED: ZERO FORWARD THRUST</span>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Footnote / Real-time Observer Output -->
+                    <div class="mt-3 pt-2 border-t border-gray-800/80 flex flex-wrap items-center justify-between text-xs text-slate-400 mono-font">
+                        <div>Interferometer Array: 8-Channel He-Ne Quadrature (532 nm)</div>
+                        <div id="observerStatus" class="text-cyan-400">Observer Inversion: Covariance Matrix Converged (0.42 ms)</div>
+                    </div>
+                </div>
+
+                <!-- Right Side Phase-Space Plot (4 cols) -->
+                <div class="lg:col-span-4 bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="line-chart" class="w-4 h-4 text-violet-400"></i>
+                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">Phase Space: $B$ vs $\rho$</h2>
+                        </div>
+                        <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded mono-font">Alfvén Boundary</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mb-2">
+                        Density ($\rho$) must fall steeply as magnetic field ($B$) expands. Curl indicates trapped back-streaming loops.
+                    </div>
+                    <div class="relative flex-1 min-h-[220px]">
+                        <canvas id="phaseChart"></canvas>
+                    </div>
+                    <div class="mt-2 text-center text-[10px] text-slate-500 mono-font">
+                        Red Sector = Detachment Failure Zone ($M_A < 1.0$)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Telemetry Time-Series & Dynamic Controller -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Secondary Chart 1: Alfvèn Mach & Detachment Ratio (4 cols) -->
+                <div class="lg:col-span-4 bg-panel rounded-2xl p-4 hud-border">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+                            <i data-lucide="gauge" class="w-3.5 h-3.5 text-cyan-400"></i>
+                            <span>Alfvén Mach Number ($M_A$)</span>
+                        </h3>
+                        <span class="text-[10px] mono-font text-cyan-400" id="currentMaVal">2.42</span>
+                    </div>
+                    <div class="h-44">
+                        <canvas id="machChart"></canvas>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mono-font mt-1">Condition $M_A > 1$ required for detachment</div>
+                </div>
+
+                <!-- Secondary Chart 2: Net Thrust & Recombination Loss (4 cols) -->
+                <div class="lg:col-span-4 bg-panel rounded-2xl p-4 hud-border">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+                            <i data-lucide="compass" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            <span>Thrust Vector Efficiency ($F_{\text{net}}$)</span>
+                        </h3>
+                        <span class="text-[10px] mono-font text-emerald-400" id="currentThrustVal">94.2%</span>
+                    </div>
+                    <div class="h-44">
+                        <canvas id="thrustChart"></canvas>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mono-font mt-1">Losses rise when closed loops redirect plasma to hull</div>
+                </div>
+
+                <!-- Closed-Loop Control & Fault Injection Panel (4 cols) -->
+                <div class="lg:col-span-4 bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+                                <i data-lucide="sliders" class="w-3.5 h-3.5 text-amber-400"></i>
+                                <span>Nozzle Hardware & Feedback Controller</span>
+                            </h3>
+                            <span id="autoControllerBadge" class="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded mono-font">AUTO-LOOP: ON</span>
+                        </div>
+
+                        <!-- Slider 1: Upstream Throat B0 Field -->
+                        <div class="space-y-1 mb-3">
+                            <div class="flex justify-between text-xs mono-font">
+                                <span class="text-slate-400">Throat Field ($B_0$)</span>
+                                <span class="text-cyan-400" id="valB0">1.85 Tesla</span>
+                            </div>
+                            <input id="sliderB0" type="range" min="0.5" max="3.0" step="0.05" value="1.85" 
+                                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                        </div>
+
+                        <!-- Slider 2: Mass Flow Rate -->
+                        <div class="space-y-1 mb-3">
+                            <div class="flex justify-between text-xs mono-font">
+                                <span class="text-slate-400">Propellant Flow ($\dot{m}$)</span>
+                                <span class="text-cyan-400" id="valMdot">5.20 mg/s</span>
+                            </div>
+                            <input id="sliderMdot" type="range" min="1.0" max="15.0" step="0.2" value="5.20" 
+                                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                        </div>
+
+                        <!-- Slider 3: Downstream Coil Current Modulator -->
+                        <div class="space-y-1 mb-3">
+                            <div class="flex justify-between text-xs mono-font">
+                                <span class="text-slate-400">Separation Coil ($I_{\text{snap}}$)</span>
+                                <span class="text-cyan-400" id="valIsnap">240.0 A</span>
+                            </div>
+                            <input id="sliderIsnap" type="range" min="0.0" max="600.0" step="5.0" value="240.0" 
+                                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
+                        <button id="btnInjectFailure" onclick="toggleFaultInjection()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 transition-all flex items-center justify-center space-x-1.5">
+                            <i data-lucide="flame" class="w-3.5 h-3.5"></i>
+                            <span id="faultBtnLabel">Simulate Reconnection</span>
+                        </button>
+                        <button id="btnSnapPlume" onclick="triggerMagneticSnap()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-600/60 text-cyan-200 transition-all flex items-center justify-center space-x-1.5">
+                            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                            <span>Pulse Snap Coil</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: CORE PHYSICS & GOVERNING EQUATIONS  -->
+        <!-- ========================================== -->
+        <div id="viewPhysics" class="hidden space-y-6">
+            <div class="border-b border-gray-800 pb-4">
+                <h2 class="text-xl font-bold text-white flex items-center space-x-2">
+                    <i data-lucide="atom" class="w-6 h-6 text-cyan-400"></i>
+                    <span>Kinetic & Magnetohydrodynamic (MHD) Formulation</span>
+                </h2>
+                <p class="text-sm text-slate-400">
+                    Governing plasma detachment mechanisms in open divergent magnetic topologies (VASIMR and Helicon thrusters).
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Card 1: Alfvèn Critical Condition & Inertial Detachment -->
+                <div class="bg-panel rounded-2xl p-5 hud-border">
+                    <div class="flex items-center space-x-2 text-cyan-400 mb-2">
+                        <i data-lucide="shield" class="w-5 h-5"></i>
+                        <h3 class="font-semibold text-white text-base">1. The Alfvèn Critical Detachment Criterion</h3>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        In an ideal magnetic nozzle, plasma follows magnetic flux lines according to Alfvén's theorem of frozen-in flux. Detachment requires ion kinetic energy density to overwhelm magnetic pressure ($E_{\text{kinetic}} \gg P_{\text{mag}}$), causing the local directed plasma velocity $u_z$ to exceed the local Alfvén speed $v_A$:
+                    </p>
+                    <div class="formula-box">
+                        $$M_A = \frac{u_z}{v_A} = \frac{u_z \sqrt{\mu_0 \rho_{\text{ion}}}}{\|\mathbf{B}\|} > 1.0$$
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        When the Alfvén Mach number $M_A < 1$, plasma remains magnetically tethered. Divergent field lines bend back toward the spacecraft magnetic dipole, causing plasma to curl into closed loops and back-stream onto thruster walls, cancelling forward thrust ($F_{\text{net}} \to 0$).
+                    </p>
+                </div>
+
+                <!-- Card 2: Electron Demagnetization & Inertial Separation -->
+                <div class="bg-panel rounded-2xl p-5 hud-border">
+                    <div class="flex items-center space-x-2 text-violet-400 mb-2">
+                        <i data-lucide="layers" class="w-5 h-5"></i>
+                        <h3 class="font-semibold text-white text-base">2. Two-Fluid Electron Inertial Separation</h3>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Because heavy ions ($m_i \gg m_e$) demagnetize early when ion Larmor radius exceeds magnetic gradient length scale ($r_{L,i} > L_B$), unneutralized electric space-charge fields ($\mathbf{E}_z$) arise to drag magnetized electrons across field lines:
+                    </p>
+                    <div class="formula-box">
+                        $$L_B = \left| \frac{B_z}{\partial B_z / \partial z} \right| \le r_{L,i} = \frac{m_i u_\perp}{q_i B_z}$$
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        The ambipolar potential $\phi(z) = \frac{k_B T_e}{e} \ln\left(\frac{n_e(z)}{n_0}\right)$ pulls electrons downstream, maintaining quasi-neutrality. If electron cross-field resistivity is insufficient, electron back-streaming occurs, setting up severe recombination losses along the magnetic margins.
+                    </p>
+                </div>
+
+                <!-- Card 3: Interferometric State Inversion Algorithm -->
+                <div class="bg-panel rounded-2xl p-5 hud-border">
+                    <div class="flex items-center space-x-2 text-emerald-400 mb-2">
+                        <i data-lucide="binary" class="w-5 h-5"></i>
+                        <h3 class="font-semibold text-white text-base">3. Real-Time Abel Inversion & Observer Model</h3>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        The PlasmaNozzle software processes chord-integrated phase shifts $\Delta \Phi(y)$ from an 8-channel orthogonal laser interferometer, reconstructing radial plasma density $\rho(r, z)$ via regularized matrix inversion:
+                    </p>
+                    <div class="formula-box">
+                        $$\Delta \Phi(y) = -\frac{e^2 \lambda}{4\pi \varepsilon_0 m_e c^2} \int_{-x_0}^{x_0} n_e(x, y)\, dx \implies \rho(r) = -\frac{1}{\pi} \int_r^R \frac{d\Phi/dy}{\sqrt{y^2 - r^2}}\, dy$$
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Comparing reconstructed density gradients $\nabla \rho$ against Hall-probe magnetic gradient $\nabla \|\mathbf{B}\|$ detects peripheral density ridges. A positive correlation in the outer margins indicates immediate detachment breakdown before macroscopic thrust loss manifests.
+                    </p>
+                </div>
+
+                <!-- Card 4: Transient Magnetic Reconnection & Snap-Coil Actuation -->
+                <div class="bg-panel rounded-2xl p-5 hud-border">
+                    <div class="flex items-center space-x-2 text-amber-400 mb-2">
+                        <i data-lucide="cpu" class="w-5 h-5"></i>
+                        <h3 class="font-semibold text-white text-base">4. Fast Transient Field Line Reconnection ("Snap Coil")</h3>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        When the observer detects $M_A$ approaching 1.0 from above, the controller drives a sharp microsecond current pulse ($dI/dt > 10^7\,\text{A/s}$) into downstream tertiary cancellation coils, creating an X-point magnetic null:
+                    </p>
+                    <div class="formula-box">
+                        $$\mathbf{B}_{\text{total}}(r, z, t) = \mathbf{B}_{\text{nozzle}}(r, z) + \mu_0 N I_{\text{snap}}(t) \mathbf{g}(r, z) \implies \left. \mathbf{B}_{\text{total}} \right|_{z_X} = 0$$
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Forced resistive reconnection severs the closed magnetic loop, shedding the plasma plasmoid into deep space at exhaust velocity ($v_e > 50\,\text{km/s}$), preventing any momentum loss to the thruster spacecraft bus.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: NASA SBIR PROPOSAL & WORK PLAN      -->
+        <!-- ========================================== -->
+        <div id="viewProposal" class="hidden space-y-6">
+            <!-- Header Summary Box -->
+            <div class="p-5 rounded-2xl bg-panel hud-border flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 mono-font">NASA SBIR PHASE I SOLICITATION</span>
+                    <h2 class="text-lg font-bold text-white mt-1">Topic TX01.01: Advanced In-Space Plasma Propulsion Diagnostics & Control</h2>
+                    <p class="text-xs text-slate-400">Automated High-Rate Interferometric Magnetic Detachment Monitor for 100 kW+ VASIMR & Helicon Thrusters</p>
+                </div>
+                <div class="flex items-center space-x-6 mono-font text-xs">
+                    <div class="text-right">
+                        <div class="text-slate-400">PHASE I DURATION</div>
+                        <div class="text-white font-bold text-base">6 Months</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-slate-400">TOTAL AWARD</div>
+                        <div class="text-cyan-400 font-bold text-base">$225,000</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-slate-400">STTR PARTNER (30%)</div>
+                        <div class="text-emerald-400 font-bold text-base">$67,500 (UCF)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- University Partner Details -->
+            <div class="bg-panel rounded-2xl p-5 hud-border">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="graduation-cap" class="w-5 h-5 text-emerald-400"></i>
+                        <h3 class="font-bold text-white text-base">Research Institution Subcontract: University of Central Florida (UCF)</h3>
+                    </div>
+                    <span class="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded mono-font">CATER Lab Subcontract: $67,500 (30.0%)</span>
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed mb-3">
+                    Under the lead of the Center for Advanced Turbomachinery and Energy Research (CATER) and UCF Space Propulsion Laboratories, the academic partnership delivers direct hardware-in-the-loop validation using UCF's high-vacuum cryo-pumped plume chamber ($3\,\text{m} \times 5\,\text{m}$, base pressure $10^{-7}\,\text{Torr}$) equipped with an RF helicon argon discharge thruster.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mono-font">
+                    <div class="p-2.5 rounded-lg bg-gray-900 border border-gray-800">
+                        <div class="text-slate-400">UCF Principal Investigator</div>
+                        <div class="text-white font-semibold">Dr. A. Vasquez, CATER</div>
+                    </div>
+                    <div class="p-2.5 rounded-lg bg-gray-900 border border-gray-800">
+                        <div class="text-slate-400">Diagnostic Apparatus</div>
+                        <div class="text-cyan-400 font-semibold">Triple Langmuir / He-Ne Interferometer</div>
+                    </div>
+                    <div class="p-2.5 rounded-lg bg-gray-900 border border-gray-800">
+                        <div class="text-slate-400">Thruster Test Article</div>
+                        <div class="text-violet-400 font-semibold">13.56 MHz, 2.5 kW Helicon Plume</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6-Month Work Breakdown Schedule -->
+            <div class="bg-panel rounded-2xl p-5 hud-border">
+                <h3 class="font-bold text-white text-base mb-4 flex items-center space-x-2">
+                    <i data-lucide="calendar" class="w-4 h-4 text-cyan-400"></i>
+                    <span>Phase I 6-Month Work Breakdown & Milestones</span>
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-[10px] text-cyan-400 mono-font font-bold">MONTHS 1 – 2</span>
+                            <h4 class="text-xs font-bold text-white mt-1">M1: Kinetic MHD Modeling & Abel Code</h4>
+                            <p class="text-[11px] text-slate-400 mt-2">
+                                Develop 2.5D Hall-MHD synthetic diagnostic code mapping density contours across divergent nozzle field geometry. Deliver Abel inversion algorithm running at &lt; 1 ms.
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] text-emerald-400 mono-font">Deliverable: Inversion Kernel v1.0</div>
+                    </div>
+                    <div class="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-[10px] text-cyan-400 mono-font font-bold">MONTHS 3 – 4</span>
+                            <h4 class="text-xs font-bold text-white mt-1">M2: Chamber Optical Setup at UCF</h4>
+                            <p class="text-[11px] text-slate-400 mt-2">
+                                Install quadrature laser interferometer on UCF CATER vacuum vessel. Measure baseline helicon argon plume at throat $B_0 = 0.8\,\text{T}$ to $2.2\,\text{T}$.
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] text-emerald-400 mono-font">Deliverable: Vacuum Test Matrix</div>
+                    </div>
+                    <div class="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-[10px] text-cyan-400 mono-font font-bold">MONTHS 4 – 5</span>
+                            <h4 class="text-xs font-bold text-white mt-1">M3: Closed-Loop Snap Modulation</h4>
+                            <p class="text-[11px] text-slate-400 mt-2">
+                                Integrate FPGA controller with tertiary detachment coil. Trigger dynamic pulse detachment when phase-space boundary enters critical Alfvèn threshold zone.
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] text-emerald-400 mono-font">Deliverable: &gt;90% Plume Release</div>
+                    </div>
+                    <div class="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-[10px] text-cyan-400 mono-font font-bold">MONTH 6</span>
+                            <h4 class="text-xs font-bold text-white mt-1">M4: Phase II Scale-Up Roadmap</h4>
+                            <p class="text-[11px] text-slate-400 mt-2">
+                                Finalize engineering design for Phase II ($850,000–$1.2M) multi-kW flight demonstrator targeting NASA Glenn VF-5 or MSFC test cells.
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] text-emerald-400 mono-font">Deliverable: Final Report & PDR</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Phase II Transition Plan -->
+            <div class="p-4 rounded-xl bg-gradient-to-r from-cyan-950/40 via-panel to-violet-950/40 border border-cyan-800/50 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white">Direct NASA Mission Alignment: Deep Space Cargo & Mars Transit</h3>
+                    <p class="text-xs text-slate-300">Technology Readiness Level: TRL 3 $\to$ TRL 5 transition, targeting NASA Gateway Power and Propulsion Element (PPE) and future Nuclear Electric Propulsion (NEP) tugs.</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/50">TRL 3 Entry &rarr; TRL 5 Exit</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: COMMERCIAL & NATIONWIDE ARR         -->
+        <!-- ========================================== -->
+        <div id="viewARR" class="hidden space-y-6">
+            <!-- Executive Summary Header -->
+            <div class="p-6 rounded-2xl bg-panel hud-border flex flex-wrap items-center justify-between gap-6">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-violet-950 text-violet-300 border border-violet-800 mono-font">CIVIL & COMMERCIAL EXPANSION</span>
+                    <h2 class="text-2xl font-bold text-white">Commercial Software ARR: <span class="text-cyan-400">$218.4M</span> Nationwide Target</h2>
+                    <p class="text-xs text-slate-400 max-w-2xl">
+                        Executive Proposition: By licensing our ultra-fast plasma boundary state observer to terrestrial semiconductor manufacturing, fusion energy reactors, commercial orbital tugs, and high-vacuum sputtering lines, PlasmaNozzle transforms high-loss plasma detachment physics into an automated SaaS operating system.
+                    </p>
+                </div>
+                <div class="p-4 rounded-xl bg-cyan-950/30 border border-cyan-700/50 text-right mono-font">
+                    <div class="text-xs text-slate-400 uppercase">Implied Enterprise Valuation (10x SaaS Multiple)</div>
+                    <div class="text-2xl font-black text-cyan-300">$2.18 Billion</div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Dual-Use Civil Industrial Pipeline</div>
+                </div>
+            </div>
+
+            <!-- ARR Distribution Table -->
+            <div class="bg-panel rounded-2xl p-5 hud-border overflow-x-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-white text-base flex items-center space-x-2">
+                        <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+                        <span>Commercial ARR Breakdown Across 6 Civil Verticals</span>
+                    </h3>
+                    <span class="text-xs text-slate-400 mono-font">Runtime Licensing & Sensor-Fusion SaaS</span>
+                </div>
+                <table class="w-full text-left text-xs mono-font">
+                    <thead class="bg-gray-900/80 text-slate-400 uppercase border-b border-gray-800">
+                        <tr>
+                            <th class="py-3 px-3">Industry Vertical</th>
+                            <th class="py-3 px-3">Specific Application</th>
+                            <th class="py-3 px-3">Pricing Metric / Runtime Seat</th>
+                            <th class="py-3 px-3">Target Asset Base</th>
+                            <th class="py-3 px-3 text-right">Mature Annual ARR</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800 text-slate-300">
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Commercial Orbital Tugs</td>
+                            <td class="py-3 px-3">LEO/GEO Satellite Servicing & Orbit Raising</td>
+                            <td class="py-3 px-3">$75,000 / Thruster Core / Year</td>
+                            <td class="py-3 px-3">480 Active Orbit Tugs</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$36.0M</td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Semiconductor EUV Sources</td>
+                            <td class="py-3 px-3">Debris-Mitigation Plasma Confinement Optimization</td>
+                            <td class="py-3 px-3">$120,000 / Scanner Fab License</td>
+                            <td class="py-3 px-3">350 EUV Lithography Tools</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$42.0M</td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Magnetic Fusion Energy</td>
+                            <td class="py-3 px-3">Divertor Plume Detachment & Heat-Flux Quenching</td>
+                            <td class="py-3 px-3">$500,000 / Reactor Diagnostic Suite</td>
+                            <td class="py-3 px-3">64 Private/Gov Tokamaks & Stellarators</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$32.0M</td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Industrial Magnetron Sputtering</td>
+                            <td class="py-3 px-3">High-Rate Optical Coating & Glass Metallization</td>
+                            <td class="py-3 px-3">$18,000 / Vacuum Line Module</td>
+                            <td class="py-3 px-3">2,800 Sputter Lines Nationwide</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$50.4M</td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Space Debris Active Removal</td>
+                            <td class="py-3 px-3">Ion Beam Shepherd Plume Contact Angle Control</td>
+                            <td class="py-3 px-3">$60,000 / Debris Hunter Vehicle</td>
+                            <td class="py-3 px-3">300 Active Orbital Removers</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$18.0M</td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40">
+                            <td class="py-3 px-3 font-semibold text-white">Lunar Surface Plasma Sintering</td>
+                            <td class="py-3 px-3">Artemis Regolith Microwave/Plasma Torches</td>
+                            <td class="py-3 px-3">$40,000 / Sintering Rig Operating Suite</td>
+                            <td class="py-3 px-3">1,000 Autonomous Units</td>
+                            <td class="py-3 px-3 text-right font-bold text-cyan-400">$40.0M</td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="border-t-2 border-gray-700 bg-gray-900/90 font-bold text-white">
+                        <tr>
+                            <td colspan="4" class="py-3 px-3 text-right uppercase tracking-wider text-xs">Total Addressable Civil Annual Recurring Revenue (ARR):</td>
+                            <td class="py-3 px-3 text-right text-sm text-cyan-300 mono-font">$218.4M</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- Deep-Dive Industry Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <!-- Card 1 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-cyan-400 uppercase">Commercial Orbital Tugs</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$36.0M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> Divergent magnetic coils accelerate argon/xenon ions up to 60 km/s, requiring complete electron cross-field detachment to avoid pulling plume ions back onto solar arrays.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Legacy Hall thruster operators accepted 15% plume divergence erosion as an unavoidable hardware replacement penalty, rather than deploying real-time magnetic line snapping.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-violet-400 uppercase">Semiconductor EUV Lithography</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$42.0M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> Laser-produced tin plasma debris expands into strong magnetic containment fields, where controlled plasma detachment channels high-energy ions away from fragile collector mirrors.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Scanner makers relied on massive hydrogen buffer-gas flushes that attenuate extreme ultraviolet photons and drastically increase cleanroom operational overhead.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-emerald-400 uppercase">Magnetic Fusion Divertors</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$32.0M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> In tokamak scrape-off layers, intentional plasma detachment drops heat flux on tungsten divertor plates from 50 MW/m² down to survivable sub-5 MW/m² thresholds.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Fusion teams used slow thermocouple feedback (seconds-scale response) that missed sub-millisecond detachment collapse, leading to localized target melt spikes.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 4 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-amber-400 uppercase">Magnetron Sputter Deposition</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$50.4M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> Unbalanced magnetrons push high-density metal ions directly toward architectural substrates by dynamically adjusting peripheral magnetic null points.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Industrial coaters treated permanent magnet assemblies as static immutable hardware, suffering 35% target utilization and non-uniform film thickness defects.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 5 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-rose-400 uppercase">Active Space Debris Removal</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$18.0M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> Ion beam shepherd spacecraft push defunct rocket upper stages via collimated plasma momentum transfer across 20-meter orbital separation gaps.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Without active detachment sensing, self-induced spacecraft bus charging causes back-streaming ions to slam directly into the shepherd's sensitive optics and reaction wheels.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Card 6 -->
+                <div class="bg-panel rounded-2xl p-4 hud-border flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-cyan-300 uppercase">Lunar Surface Regolith Sintering</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded mono-font">$40.0M ARR</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium mb-2">
+                            <strong>Physics in 1 Sentence:</strong> Thermal plasma arcs fuse abrasive lunar dust into solid landing pads, requiring strict magnetic plume confinement to shield robotic actuators from conductive regolith vapor.
+                        </p>
+                        <p class="text-[11px] text-slate-400">
+                            <strong>Why Incumbents Missed This:</strong> Competitors assumed mechanical shrouds could withstand direct molten regolith splashback, which inevitably foul mechanical seals within 48 hours of lunar operation.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collaboration Call to Action Banner -->
+            <div class="p-6 rounded-2xl bg-gradient-to-r from-gray-950 via-cyan-950/40 to-gray-950 border border-cyan-800/60 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-base font-bold text-white">Partner with the PlasmaNozzle Consortium</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Licensing inquiry, Phase II industrial demonstration, and hardware test cell integration.</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="mailto:support@rfwavecode.com" class="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-cyan-500/20">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                        <span>support@rfwavecode.com</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-900 bg-[#04060b] py-4 text-center text-xs text-slate-500 mono-font">
+        PlasmaNozzle OS &bull; NASA SBIR Area: Advanced In-Space Propulsion (VASIMR / Helicon) &bull; UCF STTR Subcontract
+    </footer>
+
+    <!-- ======================================================== -->
+    <!-- JAVASCRIPT: Simulation Engine, Charts, Telemetry Loop    -->
+    <!-- ======================================================== -->
+    <script>
+        // --- Tab Navigation Dictionary ---
+        const tabMapping = {
+            'sim': { viewId: 'viewSim', btnId: 'tabBtnSim' },
+            'physics': { viewId: 'viewPhysics', btnId: 'tabBtnPhysics' },
+            'proposal': { viewId: 'viewProposal', btnId: 'tabBtnProposal' },
+            'arr': { viewId: 'viewARR', btnId: 'tabBtnARR' }
+        };
+
+        function switchTab(tabKey) {
+            Object.keys(tabMapping).forEach(key => {
+                const view = document.getElementById(tabMapping[key].viewId);
+                const btn = document.getElementById(tabMapping[key].btnId);
+                if (key === tabKey) {
+                    view.classList.remove('hidden');
+                    btn.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40";
+                } else {
+                    view.classList.add('hidden');
+                    btn.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 hover:bg-gray-800/60 border border-transparent";
+                }
+            });
+
+            // Re-render MathJax formulas cleanly on tab swap
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise();
+            }
+
+            // If switching back to simulation, immediately recalculate canvas dimensions
+            if (tabKey === 'sim') {
+                resizeCanvas();
+            }
+        }
+
+        // --- System State Variables ---
+        let throatB0 = 1.85; // Tesla
+        let massFlowRate = 5.20; // mg/s
+        let snapCurrent = 240.0; // Amperes
+        let faultInjected = false;
+        let snapPulseTimer = 0;
+
+        // Diagnostic Metrics
+        let alfvenMach = 2.42;
+        let netThrust = 3.85; // N
+        let recombLoss = 2.1; // %
+        let detachmentState = 'NOMINAL'; // 'NOMINAL' or 'FAULT'
+
+        // Phase Space Trajectory Points (B vs Rho)
+        const trajectoryPoints = [];
+        const MAX_TRAJECTORY_POINTS = 35;
+
+        // Time series historical buffers
+        const timeLabels = [];
+        const machHistory = [];
+        const thrustHistory = [];
+        const lossHistory = [];
+        const MAX_HISTORY = 20;
+
+        for (let i = 0; i < MAX_HISTORY; i++) {
+            timeLabels.push(`-${(MAX_HISTORY - i) * 0.2}s`);
+            machHistory.push(2.4);
+            thrustHistory.push(3.85);
+            lossHistory.push(2.1);
+        }
+
+        // --- Canvas Particle & Field System ---
+        const canvas = document.getElementById('plumeCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        const NUM_PARTICLES = 160;
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                particles.push({
+                    x: Math.random() * 0.3, // normalized 0 to 1
+                    y: (Math.random() - 0.5) * 0.25, // radial offset from center (-0.5 to 0.5)
+                    vx: 0.008 + Math.random() * 0.012,
+                    vy: (Math.random() - 0.5) * 0.004,
+                    charge: Math.random() > 0.3 ? 1 : -1, // ions vs electrons
+                    life: Math.random() * 100,
+                    trapped: false
+                });
+            }
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width || 600;
+            const h = rect.height || 300;
+            canvas.width = w * window.devicePixelRatio;
+            canvas.height = h * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+
+        // --- Sliders & User Input Binding ---
+        const sliderB0 = document.getElementById('sliderB0');
+        const sliderMdot = document.getElementById('sliderMdot');
+        const sliderIsnap = document.getElementById('sliderIsnap');
+        const valB0 = document.getElementById('valB0');
+        const valMdot = document.getElementById('valMdot');
+        const valIsnap = document.getElementById('valIsnap');
+
+        sliderB0.addEventListener('input', (e) => {
+            throatB0 = parseFloat(e.target.value);
+            valB0.innerText = `${throatB0.toFixed(2)} Tesla`;
+            evaluatePhysics();
+        });
+
+        sliderMdot.addEventListener('input', (e) => {
+            massFlowRate = parseFloat(e.target.value);
+            valMdot.innerText = `${massFlowRate.toFixed(2)} mg/s`;
+            evaluatePhysics();
+        });
+
+        sliderIsnap.addEventListener('input', (e) => {
+            snapCurrent = parseFloat(e.target.value);
+            valIsnap.innerText = `${snapCurrent.toFixed(1)} A`;
+            evaluatePhysics();
+        });
+
+        function toggleFaultInjection() {
+            faultInjected = !faultInjected;
+            const btn = document.getElementById('btnInjectFailure');
+            const label = document.getElementById('faultBtnLabel');
+            if (faultInjected) {
+                btn.className = "px-3 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 border border-rose-400 text-white transition-all flex items-center justify-center space-x-1.5 shadow-lg shadow-rose-900/40";
+                label.innerText = "Clear Fault Injection";
+            } else {
+                btn.className = "px-3 py-2 rounded-lg text-xs font-semibold bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 transition-all flex items-center justify-center space-x-1.5";
+                label.innerText = "Simulate Reconnection";
+            }
+            evaluatePhysics();
+        }
+
+        function triggerMagneticSnap() {
+            snapPulseTimer = 18; // pulse for ~18 simulation frames
+            snapCurrent = 580.0;
+            sliderIsnap.value = 580.0;
+            valIsnap.innerText = `580.0 A (PULSED)`;
+            evaluatePhysics();
+        }
+
+        // --- Core Deterministic Physics Calculations ---
+        function evaluatePhysics() {
+            // Alfven speed vA ~ B / sqrt(rho)
+            // Local density at detachment zone scales with mass flow and inversely with expansion
+            const effectiveDensityFactor = (massFlowRate / 5.0) * (faultInjected ? 2.8 : 1.0);
+            const effectiveSeparationField = (snapCurrent / 250.0);
+
+            // If fault is injected, magnetic line reconnection forces plasma into closed margins
+            if (faultInjected) {
+                alfvenMach = 0.55 + (snapCurrent / 600.0) * 0.45; // Below critical detachment threshold of 1.0
+                detachmentState = 'FAULT';
+            } else {
+                // Nominal operating condition
+                alfvenMach = 1.65 + (effectiveSeparationField * 0.8) - (throatB0 * 0.15) + ((massFlowRate - 5.0) * 0.05);
+                detachmentState = alfvenMach >= 1.0 ? 'NOMINAL' : 'FAULT';
+            }
+
+            // Net Thrust (N) = m_dot * v_exhaust * efficiency
+            const maxThrust = (massFlowRate * 0.75); // approx N
+            if (detachmentState === 'NOMINAL') {
+                const efficiency = Math.min(0.97, 0.80 + (alfvenMach - 1.0) * 0.08);
+                netThrust = maxThrust * efficiency;
+                recombLoss = Math.max(1.2, 8.5 - (alfvenMach * 2.5));
+            } else {
+                // Plume curls back; magnetic tether cancels net forward impulse
+                netThrust = maxThrust * Math.max(0.04, 0.25 * (alfvenMach / 1.0));
+                recombLoss = Math.min(78.5, 45.0 + (1.0 - alfvenMach) * 40.0);
+            }
+
+            updateUI();
+        }
+
+        function updateUI() {
+            // Badges & Telemetry numbers
+            const statusBanner = document.getElementById('statusBanner');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusDesc = document.getElementById('statusDesc');
+            const stateCode = document.getElementById('stateCode');
+            const alertTag = document.getElementById('detachmentAlertTag');
+            const indicatorPulse = document.getElementById('statusIndicatorPulse');
+
+            document.getElementById('telemetryMa').innerText = alfvenMach.toFixed(2);
+            document.getElementById('telemetryThrust').innerText = `${netThrust.toFixed(2)} N`;
+            document.getElementById('telemetryLoss').innerText = `${recombLoss.toFixed(1)}%`;
+            document.getElementById('currentMaVal').innerText = alfvenMach.toFixed(2);
+            document.getElementById('currentThrustVal').innerText = `${((netThrust / (massFlowRate * 0.75)) * 100).toFixed(1)}%`;
+
+            if (detachmentState === 'NOMINAL') {
+                statusBanner.className = "p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 flex flex-wrap items-center justify-between gap-3";
+                statusTitle.innerText = "SUPER-ALFVÉNIC DETACHMENT CONFIRMED";
+                statusTitle.className = "text-emerald-300 font-semibold";
+                statusDesc.innerText = `Electron inertial detachment active. Plume thrust vector efficiency: ${((netThrust / (massFlowRate * 0.75)) * 100).toFixed(1)}%. Reconnection margin: +${(alfvenMach * 14.5).toFixed(1)} dB.`;
+                stateCode.innerText = "STATE: SUPER_ALFVENIC";
+                stateCode.className = "text-xs bg-emerald-900/60 border border-emerald-700/60 px-2 py-0.2 rounded text-emerald-200 mono-font";
+                alertTag.classList.add('hidden');
+                indicatorPulse.children[0].className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+                indicatorPulse.children[1].className = "relative inline-flex rounded-full h-3 w-3 bg-emerald-500";
+            } else {
+                statusBanner.className = "p-3.5 rounded-xl border border-rose-500/50 bg-rose-950/30 flex flex-wrap items-center justify-between gap-3";
+                statusTitle.innerText = "DETACHMENT BREAKDOWN: RECOMBINATION LOSS DETECTED";
+                statusTitle.className = "text-rose-400 font-semibold";
+                statusDesc.innerText = `CRITICAL WARNING: $M_A = ${alfvenMach.toFixed(2)} < 1.0$. Plasma frozen into closed dipole loops. Trapped density back-streaming into thruster margins.`;
+                stateCode.innerText = "STATE: SUB_ALFVENIC_FAILURE";
+                stateCode.className = "text-xs bg-rose-900/80 border border-rose-500 px-2 py-0.2 rounded text-rose-200 mono-font";
+                alertTag.classList.remove('hidden');
+                indicatorPulse.children[0].className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75";
+                indicatorPulse.children[1].className = "relative inline-flex rounded-full h-3 w-3 bg-rose-500";
+            }
+        }
+
+        // --- Chart.js Instances ---
+        let phaseChart, machChart, thrustChart;
+
+        function initCharts() {
+            // Chart 1: Phase Space Scatter (B vs rho)
+            const ctxPhase = document.getElementById('phaseChart').getContext('2d');
+
+            // Generate nominal theoretical curve: rho drops as 1/B^1.2
+            const nominalCurve = [];
+            const bMin = 0.05, bMax = 2.0;
+            for (let b = bMin; b <= bMax; b += 0.05) {
+                nominalCurve.push({ x: b, y: Math.pow(b, 1.4) * 4.2 });
+            }
+
+            // Hazard Zone boundary (detachment failure ceiling)
+            const hazardBoundary = [
+                { x: 0.05, y: 3.8 },
+                { x: 0.5, y: 4.5 },
+                { x: 1.0, y: 5.6 },
+                { x: 1.5, y: 7.2 },
+                { x: 2.0, y: 9.0 }
+            ];
+
+            phaseChart = new Chart(ctxPhase, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Hazard Ceiling (Sub-Alfvénic Curl)',
+                            data: hazardBoundary,
+                            borderColor: 'rgba(239, 68, 68, 0.7)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                            borderDash: [5, 5],
+                            showLine: true,
+                            fill: 'end',
+                            pointRadius: 0,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Nominal Super-Alfvénic Corridor',
+                            data: nominalCurve,
+                            borderColor: 'rgba(6, 182, 212, 0.8)',
+                            backgroundColor: 'transparent',
+                            showLine: true,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.2
+                        },
+                        {
+                            label: 'Live Trajectory History',
+                            data: trajectoryPoints,
+                            borderColor: 'rgba(139, 92, 246, 0.6)',
+                            backgroundColor: 'rgba(139, 92, 246, 0.4)',
+                            pointRadius: (ctx) => {
+                                const index = ctx.dataIndex;
+                                const count = ctx.dataset.data.length;
+                                return index === count - 1 ? 6 : 2.5;
+                            },
+                            pointBackgroundColor: (ctx) => {
+                                const index = ctx.dataIndex;
+                                const count = ctx.dataset.data.length;
+                                if (index === count - 1) {
+                                    return detachmentState === 'NOMINAL' ? '#06b6d4' : '#ef4444';
+                                }
+                                return 'rgba(139, 92, 246, 0.7)';
+                            },
+                            showLine: true,
+                            tension: 0.2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Magnetic Flux Density B (Tesla)',
+                                color: '#94a3b8',
+                                font: { family: 'JetBrains Mono', size: 10 }
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                            min: 0,
+                            max: 2.2
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Plasma Density ρ (10¹⁸ m⁻³)',
+                                color: '#94a3b8',
+                                font: { family: 'JetBrains Mono', size: 10 }
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+                            min: 0,
+                            max: 10
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: '#090d16',
+                            borderColor: '#1e293b',
+                            borderWidth: 1,
+                            titleFont: { family: 'JetBrains Mono' },
+                            bodyFont: { family: 'JetBrains Mono' }
+                        }
+                    }
+                }
+            });
+
+            // Chart 2: Alfven Mach over Time
+            const ctxMach = document.getElementById('machChart').getContext('2d');
+            machChart = new Chart(ctxMach, {
+                type: 'line',
+                data: {
+                    labels: [...timeLabels],
+                    datasets: [
+                        {
+                            label: 'Alfvén Mach (MA)',
+                            data: [...machHistory],
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Critical Threshold (MA = 1.0)',
+                            data: Array(MAX_HISTORY).fill(1.0),
+                            borderColor: 'rgba(239, 68, 68, 0.8)',
+                            borderDash: [4, 4],
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            min: 0,
+                            max: 3.5,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            // Chart 3: Thrust Vector & Loss
+            const ctxThrust = document.getElementById('thrustChart').getContext('2d');
+            thrustChart = new Chart(ctxThrust, {
+                type: 'line',
+                data: {
+                    labels: [...timeLabels],
+                    datasets: [
+                        {
+                            label: 'Net Thrust (N)',
+                            data: [...thrustHistory],
+                            borderColor: '#10b981',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Recombination Loss (%)',
+                            data: [...lossHistory],
+                            borderColor: '#f59e0b',
+                            borderWidth: 1.5,
+                            borderDash: [3, 3],
+                            pointRadius: 0,
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            min: 0,
+                            max: 6,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#10b981', font: { family: 'JetBrains Mono', size: 9 } }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            min: 0,
+                            max: 100,
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#f59e0b', font: { family: 'JetBrains Mono', size: 9 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        // --- Simulation Physics Step & Render Loop ---
+        let frameCount = 0;
+
+        function simulationStep() {
+            frameCount++;
+
+            // Handle momentary snap coil pulse expiration
+            if (snapPulseTimer > 0) {
+                snapPulseTimer--;
+                if (snapPulseTimer === 0) {
+                    snapCurrent = 240.0;
+                    sliderIsnap.value = 240.0;
+                    valIsnap.innerText = "240.0 A";
+                    evaluatePhysics();
+                }
+            }
+
+            // Autonomous State Observer Logic
+            // If sub-alfvenic fault detected, automatically ramp separation coil to snap field lines
+            if (detachmentState === 'FAULT') {
+                if (snapCurrent < 500.0) {
+                    snapCurrent += 18.0;
+                    sliderIsnap.value = snapCurrent.toFixed(1);
+                    valIsnap.innerText = `${snapCurrent.toFixed(1)} A [AUTO-RECOVERY]`;
+                    evaluatePhysics();
+                }
+            }
+
+            // Update Phase-Space Trajectory Data Point
+            // Density rho vs B at the diagnostic point
+            const currentB = (throatB0 * (0.35 + 0.1 * Math.sin(frameCount * 0.08))).toFixed(3);
+            let currentRho;
+            if (detachmentState === 'NOMINAL') {
+                // Density follows expected drop along divergent nozzle
+                currentRho = (Math.pow(currentB, 1.35) * 4.0 + (Math.random() - 0.5) * 0.25).toFixed(3);
+            } else {
+                // Detachment failure: density accumulates heavily at weak peripheral fields
+                currentRho = (6.2 + Math.cos(frameCount * 0.1) * 1.5 + (Math.random() - 0.5) * 0.3).toFixed(3);
+            }
+
+            trajectoryPoints.push({ x: parseFloat(currentB), y: parseFloat(currentRho) });
+            if (trajectoryPoints.length > MAX_TRAJECTORY_POINTS) {
+                trajectoryPoints.shift();
+            }
+
+            // Update Time-Series Historical Buffers every 4 frames
+            if (frameCount % 4 === 0) {
+                machHistory.shift();
+                machHistory.push(alfvenMach + (Math.random() - 0.5) * 0.06);
+
+                thrustHistory.shift();
+                thrustHistory.push(netThrust + (Math.random() - 0.5) * 0.05);
+
+                lossHistory.shift();
+                lossHistory.push(recombLoss + (Math.random() - 0.5) * 0.4);
+
+                machChart.update('none');
+                thrustChart.update('none');
+                phaseChart.update('none');
+            }
+
+            // Render 2D Magnetic Field & Particles Canvas
+            renderCanvas();
+        }
+
+        function renderCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width || 600;
+            const h = rect.height || 300;
+
+            ctx.clearRect(0, 0, w, h);
+
+            const centerY = h / 2;
+            const throatX = w * 0.15; // Location of the magnetic nozzle throat
+            const detachX = w * 0.65; // Critical detachment line
+
+            // 1. Draw Thruster Hardware & Magnet Coils on Left
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, centerY - h * 0.42, throatX - 10, h * 0.84);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(0, centerY - h * 0.42, throatX - 10, h * 0.84);
+
+            // Upstream Superconducting Coil
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(throatX - 25, centerY - h * 0.38, 20, 32);
+            ctx.fillRect(throatX - 25, centerY + h * 0.38 - 32, 20, 32);
+            ctx.fillStyle = '#bae6fd';
+            ctx.font = '9px JetBrains Mono';
+            ctx.fillText('B₀ COIL', throatX - 35, centerY - h * 0.38 - 5);
+
+            // Downstream Tertiary Snap Coil
+            const snapActive = snapCurrent > 300 || snapPulseTimer > 0;
+            ctx.fillStyle = snapActive ? '#ef4444' : '#6366f1';
+            ctx.fillRect(detachX - 10, centerY - h * 0.44, 20, 24);
+            ctx.fillRect(detachX - 10, centerY + h * 0.44 - 24, 20, 24);
+            ctx.fillStyle = snapActive ? '#fca5a5' : '#c7d2fe';
+            ctx.fillText('SNAP COIL', detachX - 20, centerY - h * 0.44 - 5);
+
+            // 2. Draw Magnetic Field Lines (B-Field)
+            ctx.lineWidth = 1.2;
+            const numLines = 9;
+
+            for (let i = 0; i < numLines; i++) {
+                const norm = (i / (numLines - 1)) * 2 - 1; // -1 to 1
+                if (norm === 0) {
+                    // Centerline
+                    ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(0, centerY);
+                    ctx.lineTo(w, centerY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    continue;
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(0, centerY + norm * 20);
+
+                if (detachmentState === 'NOMINAL') {
+                    // Divergent opening field lines; snap coil pinches lines downstream
+                    ctx.strokeStyle = `rgba(6, 182, 212, ${0.15 + (1 - Math.abs(norm)) * 0.35})`;
+                    ctx.bezierCurveTo(
+                        throatX, centerY + norm * 22,
+                        detachX * 0.6, centerY + norm * (h * 0.28),
+                        w, centerY + norm * (h * 0.48)
+                    );
+                } else {
+                    // Detachment Failure: Field lines curl completely back onto thruster chassis
+                    ctx.strokeStyle = `rgba(239, 68, 68, ${0.2 + (1 - Math.abs(norm)) * 0.4})`;
+                    ctx.bezierCurveTo(
+                        throatX + 30, centerY + norm * 35,
+                        detachX, centerY + norm * (h * 0.48),
+                        throatX - 30, centerY + norm * (h * 0.52)
+                    );
+                }
+                ctx.stroke();
+            }
+
+            // 3. Critical Detachment Line (Alfvénic Transition)
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = detachmentState === 'NOMINAL' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.6)';
+            ctx.beginPath();
+            ctx.moveTo(detachX, 20);
+            ctx.lineTo(detachX, h - 20);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 4. Update and Render Plasma Particles
+            for (let p of particles) {
+                // Update position
+                if (detachmentState === 'NOMINAL') {
+                    p.x += p.vx;
+                    // Diverge gently outwards as x moves downstream
+                    p.y += p.vy + (p.y * 0.012 * (p.x * 2.0));
+                } else {
+                    // Trapped in magnetic mirror / closed loop curl
+                    if (p.x < 0.6) {
+                        p.x += p.vx * 0.8;
+                        p.y += p.vy + (p.y * 0.02);
+                    } else {
+                        // Curl back backwards along margins!
+                        p.x -= 0.012;
+                        p.y += (p.y > 0 ? 0.008 : -0.008);
+                    }
+                }
+
+                p.life++;
+
+                // Reset particle at thruster throat when it exits canvas or dies
+                if (p.x > 1.05 || p.x < -0.05 || Math.abs(p.y) > 0.48 || p.life > 140) {
+                    p.x = 0.05 + Math.random() * 0.1;
+                    p.y = (Math.random() - 0.5) * 0.16;
+                    p.vx = 0.007 + Math.random() * 0.012;
+                    p.vy = (Math.random() - 0.5) * 0.003;
+                    p.life = 0;
+                }
+
+                // Screen coordinates
+                const px = p.x * w;
+                const py = centerY + p.y * h;
+
+                // Color based on detachment state & particle charge
+                ctx.beginPath();
+                if (detachmentState === 'NOMINAL') {
+                    ctx.fillStyle = p.charge > 0 ? 'rgba(139, 92, 246, 0.85)' : 'rgba(6, 182, 212, 0.9)';
+                    ctx.shadowColor = 'rgba(6, 182, 212, 0.8)';
+                    ctx.shadowBlur = 6;
+                    ctx.arc(px, py, p.charge > 0 ? 2.5 : 1.5, 0, Math.PI * 2);
+                } else {
+                    // Detachment failure particles turn red/amber in the curled margin
+                    const isCurling = p.x > 0.4;
+                    ctx.fillStyle = isCurling ? 'rgba(239, 68, 68, 0.9)' : 'rgba(245, 158, 11, 0.8)';
+                    ctx.shadowColor = 'rgba(239, 68, 68, 0.9)';
+                    ctx.shadowBlur = isCurling ? 8 : 4;
+                    ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0; // reset glow
+            }
+
+            // 5. Draw Laser Interferometer Chords (Green Diagnostic Lines)
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+            ctx.lineWidth = 1;
+            const chords = [detachX - 40, detachX, detachX + 40];
+            for (let cx of chords) {
+                ctx.beginPath();
+                ctx.moveTo(cx, 15);
+                ctx.lineTo(cx, h - 15);
+                ctx.stroke();
+
+                // Small detector diode dot
+                ctx.fillStyle = '#10b981';
+                ctx.fillRect(cx - 2, 10, 4, 4);
+                ctx.fillRect(cx - 2, h - 14, 4, 4);
+            }
+        }
+
+        // --- Window Onload Initialization ---
+        window.onload = function () {
+            // 1. Initialize Lucide Icons
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+
+            // 2. Setup Canvas & Particles
+            initParticles();
+            resizeCanvas();
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+            });
+
+            // 3. Initialize Charts
+            initCharts();
+
+            // 4. Evaluate initial physics state
+            evaluatePhysics();
+
+            // 5. Run continuous simulation loop
+            setInterval(simulationStep, 40); // 25 FPS update rate
+        };
+    </script>
+</body>
+</html>
